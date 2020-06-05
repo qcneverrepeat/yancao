@@ -1,0 +1,8 @@
+卷烟智投放系统
+
+版本信息：V1.0
+帮助文档：https://docs.qq.com/doc/DYm9GVWd5d0ZnY092
+
+版权归属：广西中烟工业责任有限公司
+开发方：四川大学数智泉团队
+联系我们：qiancheng1948@outlook.com
