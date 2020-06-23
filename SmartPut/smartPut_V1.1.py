@@ -236,7 +236,10 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         '''
         self.para_window = Ui_Para()
         self.para_window.show()
-  
+
+
+
+        
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", " 自动化常规投放"))
@@ -330,16 +333,10 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         # 二级窗口类也需要赋值到主窗口类属性
         self.ui2 = Ui_Form()
 
-        # 销量和结构目标需要传递到二级窗口类
-        self.ui2.sold_obj_num = float(self.sold_obj.text())
-        self.ui2.price_obj_num = float(self.price_obj.text())
-
-        # 本期销售目标也需要以pd.DataFrame(item, itemid, price, sold_previous, sold_target)的形式添加到二级窗口实例
+        # 本期销售目标也需要以pd.DataFrame(item, itemid, sold_target)的形式添加到二级窗口实例
         try: # 若未计算sold_target，也不会闪退，只是没反应
             self.ui2.sold_obj_data = pd.DataFrame({'item':self.sold_data['品规名'].values, 
                                                     'itemid':self.sold_data['品规ID'].values, 
-                                                    'price': self.sold_data['单箱价格'].values,
-                                                    'sold_previous': self.sold_data['上期销售量'].values,
                                                     'sold_target':self.sold_target}) 
         except:
             return
@@ -620,17 +617,10 @@ class Ui_Form(QtWidgets.QWidget):
 
         try:
             self.strategy = solu.stage_two(self.slym_data, self.sold_obj_data)
-            self.Table_show(self.strategy[0])
-
-            pred_sale = self.strategy[1]
-            pred_price = self.strategy[2]
-            pred_sale_change = (pred_sale-self.sold_obj_num)/self.sold_obj_num
-            pred_price_change = (pred_price-self.price_obj_num)/self.price_obj_num
-
-            QtWidgets.QMessageBox.information(self, '提示', '此投放策略下:\n预期销量为 %.2f 箱，与目标偏差为 %.2f\n预期结构为 %.2f 元/箱，与目标偏差为 %.2f'%(pred_sale,pred_sale_change,pred_price,pred_price_change))
+            self.Table_show(self.strategy)
         except:
             QtWidgets.QMessageBox.critical(self, '错误', '策略计算失败')
-
+    
     def Table_show(self, data):
         '''输入pd.DataFrame显示在strategy_tableView'''
         model = PandasModel(data)
@@ -788,13 +778,9 @@ class Solution(object):
 
     def stage_two(self, slym_source, sold_obj):
         '''
-        输入：
-            三率一面数据 slym_source: pd.DataFrame 
-            销量目标数据 sold_obj: pd.DataFrame(item, itemid, price, sold_previous, sold_target)
-        输出：
-            out_print:  pd.DataFrame in shape of (品规数, 档位数+2)
-            pred_sale_sum: 预期总销量（箱）
-            pred_price：预期结构
+        三率一面数据 slym_source: pd.DataFrame 
+        销量目标数据 sold_obj: pd.DataFrame(item, itemid, sold_target)
+        二阶段求解：return pd.DataFrame in shape of (品规数, 档位数)
         '''
         # 处理slym_source的缺失值
         slym_source = self.preprocess(slym_source)
@@ -803,26 +789,18 @@ class Solution(object):
         col = ['品规ID','品规名','三十档', '二十九档', '二十八档', '二十七档', '二十六档','二十五档','二十四档','二十三档',
                 '二十二档','二十一档','二十档','十九档','十八档','十七档','十六档','十五档','十四档', '十三档',
                 '十二档','十一档', '十档','九档','八档','七档','六档', '五档','四档','三档','二档','一档']
-        out_print = pd.DataFrame(columns=col)
-
-        # 本期预计销量
-        pred_sale = np.zeros(sold_obj.shape[0])
+        strategy = pd.DataFrame(columns=col)
 
         # 计算各品规投放策略
         for i in range(sold_obj.shape[0]):
             # 以step1的item&itemid为基准遍历
             item_id = sold_obj['itemid'].values[i]
             item = sold_obj['item'].values[i]
-            change_aim = sold_obj['sold_target'].values[i] - sold_obj['sold_previous'].values[i]
+            sold_aim = sold_obj['sold_target'].values[i]
             guide = self.get_guide(slym_source, item, item_id)
-            single = self.single_strategy(guide, change_aim)
-            out_print.loc[i,:] = single[1]
-            pred_sale[i] = round( (single[0]*guide['dzl']*guide['number']).sum() )
-        
-        pred_sale_sum = pred_sale.sum()/250
-        pred_price = (pred_sale * sold_obj['price'].values).sum()/pred_sale.sum()
+            strategy.loc[i,:] = self.single_strategy(guide, sold_aim)
 
-        return out_print, pred_sale_sum, pred_price
+        return strategy
 
     def preprocess(self, dt):
         '''
@@ -859,7 +837,7 @@ class Solution(object):
         '''
         @description: 由品规名、品规ID在预处理过的三率一面数据中得到该品规的三率一面、上期策略等指导数据（step2品规名的校验）
         @parameter: slym DataFrame; itemid np.int64; itme str
-        @return: dict{三率一面,上期策略,品规名,上期订购总量,各组总户数} 
+        @return: dict{三率一面,上期策略,品规名,上期订购总量,各组总户数} / {'strategy':None, 'item':item, 'itemid':itemid} (没有匹配到该品规的三率一面)
         '''
 
         # 由step1的'品规ID'筛选出该品规的三率一面数据框
@@ -867,7 +845,7 @@ class Solution(object):
 
         # 若在step2中未匹配到该品规ID则返回None
         if item_cube.shape[0] == 0:
-            QtWidgets.QMessageBox.critical(QtWidgets.QWidget(), '错误','三率一面数据中缺少品规【ID%s：%s】'%(itemid,item))
+            return {'strategy':None, 'item':item, 'itemid':itemid}
 
         # 该品规ID匹配到的不是30行，则弹窗报错
         if item_cube.shape[0] != 30:
@@ -879,88 +857,95 @@ class Solution(object):
             QtWidgets.QMessageBox.warning(QtWidgets.QWidget(), '警告','三率一面数据中品规名和ID不匹配：ID%s-%s'%(itemid, item2))
 
 
-        strategy = item_cube['上期策略'].values 
-        dzm = item_cube['订足面'].values
-        dzl = item_cube['订足率'].values
-        ddmz = item_cube['订单满足率'].values
-        dgl = item_cube['订购率'].values
-        dg = item_cube['订购量'].values        
-        number = item_cube['总户数'].values               
-        number_c = item_cube['订购户数'].values        
-        number_z = item_cube['订足户数'].values       
+        strategy = list(item_cube['上期策略']) # 上期投放策略
+        dzm = list(item_cube['订足面'])
+        dzl = list(item_cube['订足率'])
+        ddmz = list(item_cube['订单满足率'])
+        dgl = list(item_cube['订购率'])
+        dg = item_cube['订购量']               # 各档订购量
+        aimnow = sum(dg)                      # 上期订购总量
+        number = item_cube['总户数']           # 各组总户数
+        number_z = item_cube['订足户数']       # 各组订足的户数
+        number_c = item_cube['订购户数']       # 各组订购的户数
 
         return {'strategy':strategy, 
-                'dzm':dzm, 'dzl':dzl,'ddmz':ddmz, 'dgl':dgl, 'dg': dg,
+                'dzm':dzm, 'dzl':dzl,'ddmz':ddmz, 'dgl':dgl,
                 'item':item, 'itemid':itemid, 
-                'number':number, 'number_c':number_c, 'number_z':number_z}
+                'aimnow':aimnow, 'number':number, 
+                'number_z':number_z, 'number_c':number_c}
     
-    def single_strategy(self, guide, obj): 
+    def single_strategy(self, guide, sold_obj): 
         '''
         单品规投放策略
-        输入：
-            guide: 单个品规的三率一面, get_guide()的输出
-            obj: 该品规的销量改变目标(条)
-        输出：
-            strategy: np.array [30', 29', ...] int 
-            output: np.array [name, ID, 30'(+3), 29'(-1), ...] str
+        输入：品规ID,品规名
+        输出：list [ID, name, 30', 29', ...]
         '''
-        strategy = copy.copy(guide['strategy']) # 浅拷贝,否则相当于传址调用,会修改guide_data['strategy']
-        number = guide['number_c']             # 实际订购户数:改变一单位投放，消耗的待调整量
+        # 如果step1中的'品规ID'在step2中没有匹配，则返回None列表（保留品规名和ID）
+        if guide['strategy'] == None:
+            return [guide['item'], guide['itemid']] + [None]*30
 
-        # 计算某品规在30个档位上的score：30~1档顺序
-        score = np.array([self.slym_weight[0]*(self.slym_object[0]-guide['dzm'][i])
+        strategy = copy.copy(guide['strategy']) # 浅拷贝,否则相当于传址调用,会修改guide_data['strategy']
+        obj = sold_obj - guide['aimnow']        # 订购量待调整量
+        number_c = list(guide['number_c'])      # 实际订购户数
+        number_z = list(guide['number_z'])      # 实际订足户数
+
+        imf = [] #品规信息量
+        for i in range(0,30):
+            t = np.log(2*(30-i))-2
+            imf.append(t)
+
+        # w = [3,3,1,0.1] #三率一面的权重 
+        # o = [0.5,0.5,0.8,0.5] #三率一面的目标
+
+        #计算得分
+        score = []
+        for i in range(0,30):
+            temp = (self.slym_weight[0]*(self.slym_object[0]-guide['dzm'][i])
                     +self.slym_weight[1]*(guide['dzl'][i]-self.slym_object[1])
                     +self.slym_weight[2]*(self.slym_object[2]-guide['ddmz'][i])
-                    +self.slym_weight[3]*(guide['dgl'][i]-self.slym_object[3]) - 0.12*i # 30~1档优先级递减
-                    for i in range(30)])
-            
-        # 30~1档优先级递减
-        # score *= np.arange(1,0.4,-0.02)
+                    +self.slym_weight[3]*(guide['dgl'][i]-self.slym_object[3]))
+                    -0.12*i
+            score.append(temp)
+        mean = 1/30*sum(score)
+        for i in range(0,30):
+            score[i] = (score[i]-mean)*(1-0.02*i)
 
-        # score中心化
-        score = score - score.mean()
-
-        if obj > 0: # 需增加投放
+        if obj >= 0:
             delta = self.alpha * obj # self.alpha=1.25 销量-投放膨胀因子，增加1单位销量需要增加1*alpha投放量
-            for i in range(0,30):
-                while score[i] < -0.8:
+            for i in range(0,30): # 从30到1档
+                while score[i] < -0.8: # 过于饱和的
                     if strategy[i] <= 0:
                         break
                     strategy[i] -= 1
-                    delta += number[i]
+                    delta += number_c[i]
                     score[i] += self.beta # self.beta=0.3 市场反馈评分最小调节单位，每单位策略对评分的影响大小
             while delta > 0:
-                t = np.where(score==score.max())[0][0]
+                t = score.index(max(score))
                 strategy[t] += 1
                 score[t] -= self.beta
-                delta -= number[t]
-
-        elif obj < 0: # 需减少投放,obj为0则不调整策略
-            delta = self.alpha * obj 
+                delta -= number_c[i]
+        else:
+            delta = (1/self.alpha) * obj
+            # delta = self.alpha * obj 
             for i in range(0,30):
                 while score[i] > 0.8:
                     strategy[i] += 1
-                    delta -= number[i]
+                    delta -= number_c[i]
                     score[i] -= self.beta
             n = 1
             while delta < 0 and n <= 30:
                 n += 1
-                t = np.where(score==score.min())[0][0]
+                t = score.index(min(score))
                 if strategy[t] > 0:
                     strategy[t] -= 1
                     score[t] += self.beta
-                    delta += number[t]
+                    delta += number_c[i]
                 else:
                     score[t] += 10000
-
-        change = strategy - guide['strategy']
-        output = np.array(strategy, dtype=str)
-        for i in range(30):
-            if change[i]>0: output[i] += ' (+%s)'%change[i]
-            elif change[i]<0: output[i] += ' (%s)'%change[i]
-        output = np.append(np.array([guide['item'],guide['itemid']]), output) # 打印的内容 [name, ID, 30', 29', ...]
         
-        return strategy,output
+        strategy.insert(0, guide['item'])    # 策略list前插三率一面数据中匹配到的品规名
+        strategy.insert(0, guide['itemid'])  # 策略list前插传入的品规ID
+        return strategy
 
 class Ui_About(object):
     def setupUi(self, Form):

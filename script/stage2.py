@@ -4,7 +4,7 @@
 @Autor: sz & qc & bruce
 @Date: 2019-12-30 17:12:05
 @LastEditors: qc
-@LastEditTime: 2020-04-16 21:37:50
+@LastEditTime: 2020-06-23 01:01:25
 @note:
     订足面 dzm 0.5 反向
     订足率 dzl 0.5 正向
@@ -54,10 +54,6 @@ def get_next_strategy(aim, guide, this_strategy):
     obj = aim - guide['aimnow'] #订购量待调整量
     number_c = list(round(guide['number']*guide['dgl'])) #实际订购户数
 
-    imf = [] #品规信息量
-    for i in range(0,30):
-        t = math.log(2*(30-i))-2
-        imf.append(t)
     w = [3,3,1,0.1] #三率一面的权重
 
     #计算得分
