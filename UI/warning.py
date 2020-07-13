@@ -1,3 +1,11 @@
+'''
+@Description: 
+@Version: 
+@Autor: qc
+@Date: 2020-04-25 16:35:05
+@LastEditors: qc
+@LastEditTime: 2020-07-07 01:04:05
+'''
 # -*- coding: utf-8 -*-
 
 # Form implementation generated from reading ui file 'untitled.ui'
@@ -48,3 +56,4 @@ if __name__ == "__main__":
     ui.setupUi(MainWindow)
     MainWindow.show()
     sys.exit(app.exec_())
+

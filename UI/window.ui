@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1280</width>
+    <width>1318</width>
     <height>800</height>
    </rect>
   </property>
@@ -14,10 +14,10 @@
    <string>MainWindow</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <widget class="QPushButton" name="pushButton">
+   <widget class="QPushButton" name="data_sale">
     <property name="geometry">
      <rect>
-      <x>20</x>
+      <x>40</x>
       <y>190</y>
       <width>221</width>
       <height>51</height>
@@ -27,14 +27,14 @@
      <cursorShape>PointingHandCursor</cursorShape>
     </property>
     <property name="text">
-     <string>3.上传上期销量数据</string>
+     <string>3.上传上期订购数据</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_2">
+   <widget class="QPushButton" name="operation_1">
     <property name="geometry">
      <rect>
-      <x>20</x>
-      <y>580</y>
+      <x>310</x>
+      <y>660</y>
       <width>221</width>
       <height>51</height>
      </rect>
@@ -43,23 +43,23 @@
      <cursorShape>PointingHandCursor</cursorShape>
     </property>
     <property name="text">
-     <string>4.生成本期销量目标</string>
+     <string>6.生成本期销量目标</string>
     </property>
    </widget>
    <widget class="QTableView" name="tableView">
     <property name="geometry">
      <rect>
-      <x>265</x>
-      <y>31</y>
+      <x>310</x>
+      <y>30</y>
       <width>951</width>
       <height>601</height>
      </rect>
     </property>
    </widget>
-   <widget class="QLineEdit" name="lineEdit">
+   <widget class="QLineEdit" name="input_price_obj">
     <property name="geometry">
      <rect>
-      <x>20</x>
+      <x>40</x>
       <y>110</y>
       <width>221</width>
       <height>51</height>
@@ -75,10 +75,10 @@
      <string>2.输入结构目标（元/箱）</string>
     </property>
    </widget>
-   <widget class="QLineEdit" name="lineEdit_2">
+   <widget class="QLineEdit" name="input_sold_obj">
     <property name="geometry">
      <rect>
-      <x>20</x>
+      <x>40</x>
       <y>30</y>
       <width>221</width>
       <height>51</height>
@@ -97,11 +97,11 @@
      <string>1.输入销量目标（条）</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_3">
+   <widget class="QPushButton" name="operation_3">
     <property name="geometry">
      <rect>
-      <x>1020</x>
-      <y>650</y>
+      <x>1060</x>
+      <y>660</y>
       <width>201</width>
       <height>51</height>
      </rect>
@@ -110,7 +110,55 @@
      <cursorShape>PointingHandCursor</cursorShape>
     </property>
     <property name="text">
-     <string>5.生成本期投放策略</string>
+     <string>8.生成本期投放策略</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="data_item">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>270</y>
+      <width>221</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="cursor">
+     <cursorShape>PointingHandCursor</cursorShape>
+    </property>
+    <property name="text">
+     <string>4.上传品规信息</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="data_cust">
+    <property name="geometry">
+     <rect>
+      <x>40</x>
+      <y>350</y>
+      <width>221</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="cursor">
+     <cursorShape>PointingHandCursor</cursorShape>
+    </property>
+    <property name="text">
+     <string>5.上传零售户信息</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="operation_2">
+    <property name="geometry">
+     <rect>
+      <x>560</x>
+      <y>660</y>
+      <width>221</width>
+      <height>51</height>
+     </rect>
+    </property>
+    <property name="cursor">
+     <cursorShape>PointingHandCursor</cursorShape>
+    </property>
+    <property name="text">
+     <string>7.调整销量目标</string>
     </property>
    </widget>
   </widget>
@@ -119,7 +167,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>1280</width>
+     <width>1318</width>
      <height>18</height>
     </rect>
    </property>
@@ -127,11 +175,8 @@
     <property name="title">
      <string>菜单</string>
     </property>
-    <addaction name="separator"/>
-    <addaction name="actionSimple_Example"/>
-    <addaction name="actionHelp"/>
-    <addaction name="actionExit"/>
-    <addaction name="actionAbout_us"/>
+    <addaction name="doc"/>
+    <addaction name="para"/>
    </widget>
    <addaction name="menu"/>
   </widget>
@@ -154,6 +199,16 @@
   <action name="actionAbout_us">
    <property name="text">
     <string>About us</string>
+   </property>
+  </action>
+  <action name="doc">
+   <property name="text">
+    <string>帮助文档</string>
+   </property>
+  </action>
+  <action name="para">
+   <property name="text">
+    <string>参数调整</string>
    </property>
   </action>
  </widget>

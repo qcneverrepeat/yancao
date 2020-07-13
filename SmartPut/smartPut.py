@@ -9,16 +9,17 @@ import numpy as np
 import pandas as pd
 import cplex
 from PyQt5 import QtCore, QtGui, QtWidgets
+import xlrd
 
 # 初始化全局变量para：读取parameter.json（上次的参数设置）,万一文件不存在则赋原始默认值
 try:
     f = open('parameter.json')
     para = json.load(f)
 except:
-    para = {'c':10000, 'delta_price':0.1, 'slym_w':[3,3,1,0.1], 'slym_o':[0.5,0.5,0.8,0.5], 'alpha':1.25, 'beta':0.3}
+    para = {'delta_sold':0.01, 'slym_w':[3,3,1,0.1], 'slym_o':[0.5,0.5,0.8,0.5], 'thre':[-0.8,0.8], 'beta':0.3, 'alpha':0.12}
 
 class Ui_Start(QtWidgets.QMainWindow):
-    '''主窗口类'''
+    '''主窗口类: 自动化、智能化、...'''
     def setupUi(self, Start):
         Start.setObjectName("MainWindow")
         if getattr(sys, 'frozen', False):
@@ -106,7 +107,7 @@ class Ui_Start(QtWidgets.QMainWindow):
 
     def retranslateUi(self, Start):
         _translate = QtCore.QCoreApplication.translate
-        Start.setWindowTitle(_translate("MainWindow", " 智投放V1.0"))
+        Start.setWindowTitle(_translate("MainWindow", " 智投放V1.2"))
         self.fun1.setText(_translate("MainWindow", "自动化 常规投放"))
         self.fun2.setText(_translate("MainWindow", "智能化 常规投放"))
         self.fun3.setText(_translate("MainWindow", "智能化 新品选点"))
@@ -135,70 +136,90 @@ class Ui_Start(QtWidgets.QMainWindow):
         self.ui2.setupUi(self.sub_window) # 此步中初始化了一级窗口类中的self.para，类似__init__的作用
         self.sub_window.show()
 
+
 class Ui_MainWindow(QtWidgets.QMainWindow):
     '''一级窗口类'''    
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(1280, 790)
+        MainWindow.resize(1318, 800)
         if getattr(sys, 'frozen', False):
             root = os.path.dirname(sys.executable)
         else:
             root = QtCore.QFileInfo(__file__).absolutePath() # __file__是文件名字符串
         MainWindow.setWindowIcon(QtGui.QIcon(root+'/fav.ico'))
+
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
 
-        # 1.输入销量目标（条）
-        self.sold_obj = QtWidgets.QLineEdit(self.centralwidget)
-        self.sold_obj.setGeometry(QtCore.QRect(20, 30, 221, 51))
-        self.sold_obj.setInputMask("")
-        self.sold_obj.setText("")
-        self.sold_obj.setMaxLength(32767)
-        self.sold_obj.setAlignment(QtCore.Qt.AlignCenter)
-        self.sold_obj.setObjectName("sold_obj")
+        # 1.输入销量目标
+        self.input_sold_obj = QtWidgets.QLineEdit(self.centralwidget)
+        self.input_sold_obj.setGeometry(QtCore.QRect(40, 30, 221, 51))
+        self.input_sold_obj.setText("")
+        self.input_sold_obj.setMaxLength(32766)
+        self.input_sold_obj.setAlignment(QtCore.Qt.AlignCenter)
+        self.input_sold_obj.setObjectName("input_sold_obj")
 
-        # 2.输入结构目标（元/箱）
-        self.price_obj = QtWidgets.QLineEdit(self.centralwidget)
-        self.price_obj.setGeometry(QtCore.QRect(20, 110, 221, 51))
-        self.price_obj.setText("")
-        self.price_obj.setAlignment(QtCore.Qt.AlignCenter)
-        self.price_obj.setObjectName("price_obj")
+        # 2.输入结构目标
+        self.input_price_obj = QtWidgets.QLineEdit(self.centralwidget)
+        self.input_price_obj.setGeometry(QtCore.QRect(40, 110, 221, 51))
+        self.input_price_obj.setText("")
+        self.input_price_obj.setAlignment(QtCore.Qt.AlignCenter)
+        self.input_price_obj.setObjectName("input_price_obj")
 
-        # 3.上传上期销量数据
-        self.upload_sold = QtWidgets.QPushButton(self.centralwidget)
-        self.upload_sold.setGeometry(QtCore.QRect(20, 190, 221, 51))
-        self.upload_sold.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.upload_sold.setObjectName("upload_sold")
-        self.upload_sold.clicked.connect(self.Load_sold)
+        # 3.上传上期订购数据
+        self.button_data_sale = QtWidgets.QPushButton(self.centralwidget)
+        self.button_data_sale.setGeometry(QtCore.QRect(40, 190, 221, 51))
+        self.button_data_sale.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.button_data_sale.setObjectName("button_data_sale")
+        self.button_data_sale.clicked.connect(self.Load_data_sale)
+        self.button_data_sale.setToolTip('上期订购数据字段：\n"CUST_ID" (零售户ID)\n"ITEM_ID" (品规ID)\n"QTY_NEED" (需求量/条)\n"QTY_SOLD" (订购成交量/条)')
 
-        # 4.生成本期销量目标
-        self.calc_sold_obj = QtWidgets.QPushButton(self.centralwidget)
-        self.calc_sold_obj.setGeometry(QtCore.QRect(20, 580, 221, 51))
-        self.calc_sold_obj.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.calc_sold_obj.setObjectName("calc_sold_obj")
-        self.calc_sold_obj.clicked.connect(self.Calc_sold_obj)
+        # 4.上传品规信息
+        self.button_data_item = QtWidgets.QPushButton(self.centralwidget)
+        self.button_data_item.setGeometry(QtCore.QRect(40, 270, 221, 51))
+        self.button_data_item.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.button_data_item.setObjectName("button_data_item")
+        self.button_data_item.clicked.connect(self.Load_data_item)
+        self.button_data_item.setToolTip('品规信息字段：\n"品规名"\n"品规ID"\n"本期产能" (条)\n"批发价格" (元/条)')
 
-        # 5.附加：销量目标调整（二阶段内容）
-        self.obj_adjust = QtWidgets.QPushButton(self.centralwidget)
-        self.obj_adjust.setGeometry(QtCore.QRect(800, 650, 201, 51))
-        self.obj_adjust.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.obj_adjust.setObjectName("obj_adjust")
-        self.obj_adjust.clicked.connect(self.Obj_adjust)
-
-        # 6.生成本期投放策略
-        self.calc_strategy = QtWidgets.QPushButton(self.centralwidget)
-        self.calc_strategy.setGeometry(QtCore.QRect(1020, 650, 201, 51))
-        self.calc_strategy.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.calc_strategy.setObjectName("calc_strategy")
-        self.calc_strategy.clicked.connect(self.Calc_strategy)
-
-        # 表格预览
-        self.sold_tableView = QtWidgets.QTableView(self.centralwidget)
-        self.sold_tableView.setGeometry(QtCore.QRect(265, 31, 951, 601))
-        self.sold_tableView.setObjectName("sold_tableView")
+        # 5.上传零售户信息
+        self.button_data_cust = QtWidgets.QPushButton(self.centralwidget)
+        self.button_data_cust.setGeometry(QtCore.QRect(40, 350, 221, 51))
+        self.button_data_cust.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.button_data_cust.setObjectName("button_data_cust")
+        self.button_data_cust.clicked.connect(self.Load_data_cust)
+        self.button_data_cust.setToolTip('零售户信息字段：\n"客户ID"\n"档位" (1~30数字)')
         
+
+        # 6.生成本期销量目标
+        self.button_calc_sold_obj = QtWidgets.QPushButton(self.centralwidget)
+        self.button_calc_sold_obj.setGeometry(QtCore.QRect(310, 660, 221, 51))
+        self.button_calc_sold_obj.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.button_calc_sold_obj.setObjectName("button_calc_sold_obj")
+        self.button_calc_sold_obj.clicked.connect(self.Calc_sold_obj)
+
+        # 7.调整销量目标
+        self.button_ajust_sold_obj = QtWidgets.QPushButton(self.centralwidget)
+        self.button_ajust_sold_obj.setGeometry(QtCore.QRect(560, 660, 221, 51))
+        self.button_ajust_sold_obj.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.button_ajust_sold_obj.setObjectName("button_ajust_sold_obj")
+        self.button_ajust_sold_obj.clicked.connect(self.Obj_adjust)
+
+        # 8.生成本期投放策略
+        self.button_calc_strategy = QtWidgets.QPushButton(self.centralwidget)
+        self.button_calc_strategy.setGeometry(QtCore.QRect(1060, 660, 201, 51))
+        self.button_calc_strategy.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.button_calc_strategy.setObjectName("button_calc_strategy")
+        self.button_calc_strategy.clicked.connect(self.Calc_strategy)
+        
+        # 表格预览区
+        self.sold_tableView = QtWidgets.QTableView(self.centralwidget)
+        self.sold_tableView.setGeometry(QtCore.QRect(310, 30, 951, 601))
+        self.sold_tableView.setObjectName("sold_tableView")
+
+        MainWindow.setCentralWidget(self.centralwidget)
         self.menubar = QtWidgets.QMenuBar(MainWindow)
-        self.menubar.setGeometry(QtCore.QRect(0, 0, 1280, 18))
+        self.menubar.setGeometry(QtCore.QRect(0, 0, 1318, 18))
         self.menubar.setObjectName("menubar")
         self.menu = QtWidgets.QMenu(self.menubar)
         self.menu.setObjectName("menu")
@@ -206,122 +227,162 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.statusbar = QtWidgets.QStatusBar(MainWindow)
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
-        self.actionHelp = QtWidgets.QAction(MainWindow)
-        self.actionHelp.setObjectName("actionHelp") 
-        self.actionPara = QtWidgets.QAction(MainWindow)
-        self.actionPara.setObjectName("actionPara")
 
-        self.menu.addSeparator()
-        self.menu.addAction(self.actionPara)
-        self.menu.addAction(self.actionHelp)
+        # 菜单栏：参数调整self.doc
+        self.doc = QtWidgets.QAction(MainWindow)
+        self.doc.setObjectName("doc")
+        self.doc.triggered.connect(self.OpenHelp)
+
+        # 菜单栏：帮助文档self.para
+        self.para = QtWidgets.QAction(MainWindow)
+        self.para.setObjectName("para")
+        self.para.triggered.connect(self.ModiPara)
+
+        self.menu.addAction(self.doc)
+        self.menu.addAction(self.para)
         self.menubar.addAction(self.menu.menuAction())
-
-        MainWindow.setCentralWidget(self.centralwidget)
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
-        # 菜单栏：参数调整self.actionPara
-        self.actionHelp.triggered.connect(self.openHelp)
-
-        # 菜单栏：帮助文档self.actionHelp
-        self.actionPara.triggered.connect(self.modiPara)
-
-    def openHelp(self):
-        '''菜单栏：帮助文档'''
-        webbrowser.open('https://docs.qq.com/doc/DYm9GVWd5d0ZnY092')
-
-    def modiPara(self):
-        '''
-        菜单栏：参数调整
-        '''
-        self.para_window = Ui_Para()
-        self.para_window.show()
-  
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", " 自动化常规投放"))
-        self.sold_obj.setPlaceholderText(_translate("MainWindow", "1.输入销量目标（条）"))
-        self.price_obj.setPlaceholderText(_translate("MainWindow", "2.输入结构目标（元/箱）"))
-        self.upload_sold.setText(_translate("MainWindow", "3.上传上期销量数据"))
-        self.calc_sold_obj.setText(_translate("MainWindow", "4.生成本期销量目标"))
-        self.obj_adjust.setText(_translate("MainWindow", "5.调整销量目标"))
-        self.calc_strategy.setText(_translate("MainWindow", "6.生成本期投放策略"))
+        MainWindow.setWindowTitle(_translate("MainWindow", " 智投放V1.2"))
+
+        self.input_sold_obj.setPlaceholderText(_translate("MainWindow", "1.输入销量目标（箱）"))
+        self.input_price_obj.setPlaceholderText(_translate("MainWindow", "2.输入结构目标（元/箱）"))
+
+        self.button_data_sale.setText(_translate("MainWindow", "3.上传上期订购数据"))
+        self.button_data_item.setText(_translate("MainWindow", "4.上传品规信息"))
+        self.button_data_cust.setText(_translate("MainWindow", "5.上传零售户信息"))
+
+        self.button_calc_sold_obj.setText(_translate("MainWindow", "6.生成本期销量目标"))
+        self.button_ajust_sold_obj.setText(_translate("MainWindow", "7.调整销量目标"))
+        self.button_calc_strategy.setText(_translate("MainWindow", "8.生成本期投放策略"))
 
         self.menu.setTitle(_translate("MainWindow", "菜单"))
-        self.actionHelp.setText(_translate("MainWindow", "帮助文档"))
-        self.actionPara.setText(_translate("MainWindow", "参数调整"))
-
-    def Load_sold(self):
-        '''
-        3.上传上期销量数据
-        数据框赋值到self.sold_data
-        '''
-        options = QtWidgets.QFileDialog.Options()
-        options |= QtWidgets.QFileDialog.DontUseNativeDialog
-        fileName = QtWidgets.QFileDialog.getOpenFileName(None, "上传上期销量数据", "",'''All Files (*);;
-                            Microsoft Excel 工作表 (*.xlsx);;Microsoft Excel 97-2003 工作表 (*.xls)''', options=options)[0]
-        if fileName:
-            try: # pandas读入数据容易出错,防止闪退
-                self.sold_data = pd.read_excel(fileName, dtype={'品规ID':str})
-                if not self.check_sqxl(self.sold_data): return # 校验上期销量数据
-                self.table_show(self.sold_data)
-            except: 
-                QtWidgets.QMessageBox.critical(self, '错误', '上传数据失败')
-
-    def check_sqxl(self, dt):
-        '''
-        校验上期销量数据
-        1.字段名是否正确
-        2.'品规名','单箱价格','品规ID'是否有缺失
-        若有错误，则过程中会相应弹出
-        并最终返回 无误True/有误False
-        '''
-        # 字段名是否正确
-        s = {'上期销售量', '产能', '单箱价格', '品规ID', '品规名'}
-        jud = s.issubset(set(dt.columns))
-        if not jud:
-            QtWidgets.QMessageBox.critical(self, '错误', '字段名有误，请检查数据后重新上传')
-            return False
-        
-        # 若品规名、品规ID、档位有缺失
-        if dt.loc[:,['品规名','单箱价格','品规ID']].isnull().sum().sum() > 0:
-            QtWidgets.QMessageBox.critical(self, '错误', '品规名，品规ID或单箱价格有缺失，请检查数据后重新上传')
-            return False
-        
-        return True
-
-    def Calc_sold_obj(self):
-        '''
-        4.生成本期销量目标
-        self.sold_target: np.array in int dtype
-        '''
-        try:
-            Sold_obj = int(self.sold_obj.text())
-            Price_obj = float(self.price_obj.text())
-
-            # self.sold_data中有缺失值，用mean填补，并弹出警告或报错
-
-            if (self.sold_data['上期销售量'].isnull().sum()>0) or (self.sold_data['产能'].isnull().sum()>0):
-                self.sold_data['上期销售量'].fillna(self.sold_data['上期销售量'].mean(), inplace=True)
-                self.sold_data['产能'].fillna(10e6, inplace=True)   
-                QtWidgets.QMessageBox.warning(self, '警告', '上期销量或产能有缺失，已智能补全')
-            
-            solu = Solution(para)
-            self.sold_target = solu.stage_one(self.sold_data, Sold_obj, Price_obj)   # 一阶段的解int array
-            self.sold_data['本期销量目标'] = pd.Series(self.sold_target, dtype='int') # 读入的sold_data中增加列
-            self.table_show(self.sold_data)
-
-        except: # 计算出错不会闪退，只是没反应
-            return
+        self.doc.setText(_translate("MainWindow", "帮助文档"))
+        self.para.setText(_translate("MainWindow", "参数调整"))
 
     def table_show(self, data):
         '''输入pd.DataFrame显示在sold_tableView'''
         model = PandasModel(data)
         self.sold_tableView.setModel(model)
 
+    def OpenHelp(self):
+        '''菜单栏：帮助文档'''
+        webbrowser.open('https://docs.qq.com/doc/DYm9GVWd5d0ZnY092')
+
+    def ModiPara(self):
+        '''
+        菜单栏：参数调整
+        '''
+        self.para_window = Ui_Para()
+        self.para_window.show()
+
+
+    def Load_data_sale(self):
+        '''
+        3.上传上期订购数据
+        数据框赋值到 self.data_sale
+        '''
+        options = QtWidgets.QFileDialog.Options()
+        options |= QtWidgets.QFileDialog.DontUseNativeDialog
+        fileName = QtWidgets.QFileDialog.getOpenFileName(None, "上传上期销量数据", "",'''All Files (*);;
+                            Microsoft Excel 工作表 (*.xlsx);;
+                            Microsoft Excel 97-2003 工作表 (*.xls);;
+                            CSV 逗号分隔文件 (*.csv)''', options=options)[0]
+        if fileName:
+            try: # pandas读入数据容易出错,防止闪退
+                self.data_sale = pd.read_excel(fileName)
+                self.table_show(self.data_sale)
+            except xlrd.XLRDError: # 如果输入的是csv
+                self.data_sale = pd.read_csv(fileName)
+                self.table_show(self.data_sale)
+            except: 
+                QtWidgets.QMessageBox.critical(self, '错误', '上传数据失败')
+
+    def Load_data_item(self):
+        '''
+        4.上传品规数据
+        数据框赋值到 self.data_item
+        '''
+        options = QtWidgets.QFileDialog.Options()
+        options |= QtWidgets.QFileDialog.DontUseNativeDialog
+        fileName = QtWidgets.QFileDialog.getOpenFileName(None, "上传上期销量数据", "",'''All Files (*);;
+                            Microsoft Excel 工作表 (*.xlsx);;
+                            Microsoft Excel 97-2003 工作表 (*.xls);;
+                            CSV 逗号分隔文件 (*.csv)''', options=options)[0]
+        if fileName:
+            try: # pandas读入数据容易出错,防止闪退
+                self.data_item = pd.read_excel(fileName)
+                self.table_show(self.data_item)
+            except xlrd.XLRDError: # 如果输入的是csv
+                self.data_item = pd.read_csv(fileName)
+                self.table_show(self.data_item)
+            except: 
+                QtWidgets.QMessageBox.critical(self, '错误', '上传数据失败')
+
+    def Load_data_cust(self):
+        '''
+        5.上传零售户数据
+        数据框赋值到 self.data_cust
+        '''
+        options = QtWidgets.QFileDialog.Options()
+        options |= QtWidgets.QFileDialog.DontUseNativeDialog
+        fileName = QtWidgets.QFileDialog.getOpenFileName(None, "上传上期销量数据", "",'''All Files (*);;
+                            Microsoft Excel 工作表 (*.xlsx);;
+                            Microsoft Excel 97-2003 工作表 (*.xls);;
+                            CSV 逗号分隔文件 (*.csv)''', options=options)[0]
+        if fileName:
+            try: # pandas读入数据容易出错,防止闪退
+                self.data_cust = pd.read_excel(fileName)
+                self.table_show(self.data_cust)
+            except xlrd.XLRDError: # 如果输入的是csv
+                self.data_cust = pd.read_csv(fileName)
+                self.table_show(self.data_cust)
+            except: 
+                QtWidgets.QMessageBox.critical(self, '错误', '上传数据失败')
+
+    def Calc_sold_obj(self):
+        '''
+        6.生成本期销量目标
+        self.sold_target: np.array in int dtype
+        '''
+        try:
+            value_sold_obj = int(self.input_sold_obj.text())
+            value_price_obj = float(self.input_price_obj.text())
+
+            # 在self.data_item中求得
+            self.data_item['上期销量'] = 0
+            for i in self.data_item.index:
+                item_ID = self.data_item.loc[i, '品规ID']
+                qty_sale = self.data_sale[self.data_sale['ITEM_ID'] == item_ID]['QTY_SOLD'].sum()
+                self.data_item.loc[i, '上期销量'] = qty_sale
+            
+            solu = Solution(para)
+            self.sold_target = solu.stage_one(self.data_item, value_sold_obj, value_price_obj)   # 一阶段的解int array
+            self.data_item['本期销量目标'] = pd.Series(self.sold_target, dtype='int') # 读入的self.data_item中增加列
+            self.table_show(self.data_item) 
+
+            # 弹窗评估目标分解结果
+            target = self.sold_target.sum()/250
+            target_d = (target-value_sold_obj)/value_sold_obj
+            price = (self.sold_target * self.data_item['批发价格'].values * 250).sum()/self.sold_target.sum()
+            price_d = (price-value_price_obj)/value_price_obj
+            QtWidgets.QMessageBox.information(self, '提示', '此目标分解下：\n销量目标为 %.2f 箱，与输入偏差为 %.2f\n结构目标为 %.2f 元/箱，与输入偏差为 %.2f'%(target, target_d, price, price_d))
+
+        except: # 计算出错不会闪退，只是没反应
+            return
+
+    def Obj_adjust(self):
+        '''
+        7.调整本期销量目标
+        '''
+        QtWidgets.QMessageBox.information(self, '提示', '此功能属于智能化投放部分，尚在开发，敬请期待')
+
     def Calc_strategy(self):
         '''
-        5.生成本期投放策略
+        8.生成本期投放策略
         点击调用二级窗口类
         '''
         # 创建一个QWidget对象作为子窗口,并设为类属性防止被销毁闪退
@@ -329,18 +390,21 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
 
         # 二级窗口类也需要赋值到主窗口类属性
         self.ui2 = Ui_Form()
-
-        # 销量和结构目标需要传递到二级窗口类
-        self.ui2.sold_obj_num = float(self.sold_obj.text())
-        self.ui2.price_obj_num = float(self.price_obj.text())
-
-        # 本期销售目标也需要以pd.DataFrame(item, itemid, price, sold_previous, sold_target)的形式添加到二级窗口实例
-        try: # 若未计算sold_target，也不会闪退，只是没反应
-            self.ui2.sold_obj_data = pd.DataFrame({'item':self.sold_data['品规名'].values, 
-                                                    'itemid':self.sold_data['品规ID'].values, 
-                                                    'price': self.sold_data['单箱价格'].values,
-                                                    'sold_previous': self.sold_data['上期销售量'].values,
-                                                    'sold_target':self.sold_target}) 
+        
+        # 若未计算Calc_sold_obj()，也不会闪退，只是没反应
+        try:
+        # 传递到二级窗口类的数据
+        # 销量目标 value_sold_obj
+        # 结构目标 value_price_obj
+        # 订购数据 data_sale: CUST_ID ITEM_ID QTY_NEED	QTY_SOLD 品规名 本期产能 批发价格 档位
+        # 品规数据 data_item: 品规名 品规ID 本期产能 批发价格 上期销量 本期销量目标
+        # 零售户数据 data_cust: 客户ID 档位
+            self.ui2.value_sold_obj = float(self.input_sold_obj.text())
+            self.ui2.value_price_obj = float(self.input_price_obj.text())
+            self.ui2.data_sale = pd.merge(self.data_sale, self.data_item, left_on='ITEM_ID', right_on='品规ID', how='right').drop('品规ID',axis=1) # 由品规ID引入名称、价格
+            self.ui2.data_sale = pd.merge(self.ui2.data_sale, self.data_cust, left_on='CUST_ID', right_on='客户ID', how='left').drop('客户ID',axis=1) # 由客户ID引入档位
+            self.ui2.data_item = self.data_item
+            self.ui2.data_cust = self.data_cust
         except:
             return
 
@@ -348,8 +412,7 @@ class Ui_MainWindow(QtWidgets.QMainWindow):
         self.ui2.setupUi(self.sub_window)             
         self.sub_window.show() 
 
-    def Obj_adjust(self):
-        QtWidgets.QMessageBox.information(self, '提示', '此功能属于智能化投放部分，尚在开发，敬请期待')
+
 
 class Ui_Para(QtWidgets.QWidget):
     '''参数调节窗口类'''
@@ -361,98 +424,134 @@ class Ui_Para(QtWidgets.QWidget):
         # 软件关闭，重新打开参数调节窗口：全局变量从json中读入
         # 软件保持开启，重新打开参数调节窗口：全局变量在Ensure函数中已修改
         self.setObjectName("Para")
-        self.resize(805, 551)
+        self.resize(805, 550)
+        if getattr(sys, 'frozen', False):
+            root = os.path.dirname(sys.executable)
+        else:
+            root = QtCore.QFileInfo(__file__).absolutePath() # __file__是文件名字符串
+        self.setWindowIcon(QtGui.QIcon(root+'/fav.ico'))
 
-        self.label = QtWidgets.QLabel(self)
-        self.label.setGeometry(QtCore.QRect(30, 50, 241, 21))
-        self.label.setObjectName("label")
         self.label_2 = QtWidgets.QLabel(self)
-        self.label_2.setGeometry(QtCore.QRect(30, 110, 251, 21))
+        self.label_2.setGeometry(QtCore.QRect(30, 40, 251, 21))
         self.label_2.setObjectName("label_2")
         self.label_3 = QtWidgets.QLabel(self)
-        self.label_3.setGeometry(QtCore.QRect(30, 170, 231, 21))
+        self.label_3.setGeometry(QtCore.QRect(30, 100, 231, 21))
         self.label_3.setObjectName("label_3")
         self.label_4 = QtWidgets.QLabel(self)
-        self.label_4.setGeometry(QtCore.QRect(30, 230, 251, 21))
+        self.label_4.setGeometry(QtCore.QRect(30, 160, 251, 21))
         self.label_4.setObjectName("label_4")
         self.label_5 = QtWidgets.QLabel(self)
-        self.label_5.setGeometry(QtCore.QRect(30, 290, 261, 21))
+        self.label_5.setGeometry(QtCore.QRect(30, 220, 261, 21))
         self.label_5.setObjectName("label_5")
         self.label_6 = QtWidgets.QLabel(self)
-        self.label_6.setGeometry(QtCore.QRect(30, 350, 261, 21))
+        self.label_6.setGeometry(QtCore.QRect(30, 280, 261, 21))
         self.label_6.setObjectName("label_6")
+        self.label_7 = QtWidgets.QLabel(self)
+        self.label_7.setGeometry(QtCore.QRect(30, 410, 531, 21))
+        self.label_7.setObjectName("label_7")
+        self.label_8 = QtWidgets.QLabel(self)
+        self.label_8.setGeometry(QtCore.QRect(30, 340, 531, 21))
+        self.label_8.setObjectName("label_8")
 
-        self.c = QtWidgets.QDoubleSpinBox(self)
-        self.c.setGeometry(QtCore.QRect(310, 40, 101, 41))
-        self.c.setDecimals(0)
-        self.c.setMaximum(1000000.0)
-        self.c.setSingleStep(1000.0)
-        self.c.setProperty("value", para['c'])
-        self.c.setObjectName("c")
-
-        self.delta_price = QtWidgets.QDoubleSpinBox(self)
-        self.delta_price.setGeometry(QtCore.QRect(310, 100, 101, 41))
-        self.delta_price.setMaximum(1.0)
-        self.delta_price.setSingleStep(0.01)
-        self.delta_price.setProperty("value", para['delta_price'])
-        self.delta_price.setObjectName("delta_price")
+        self.delta_sold = QtWidgets.QDoubleSpinBox(self)
+        self.delta_sold.setGeometry(QtCore.QRect(310, 30, 101, 41))
+        self.delta_sold.setMaximum(1.0)
+        self.delta_sold.setSingleStep(0.01)
+        self.delta_sold.setProperty("value", para['delta_sold'])
+        self.delta_sold.setObjectName("delta_sold")
  
         self.o1 = QtWidgets.QDoubleSpinBox(self)
-        self.o1.setGeometry(QtCore.QRect(310, 220, 101, 41))
+        self.o1.setGeometry(QtCore.QRect(310, 150, 101, 41))
         self.o1.setMaximum(5.0)
         self.o1.setSingleStep(0.1)
         self.o1.setProperty("value", para['slym_o'][0])
         self.o1.setObjectName("o1")
+
         self.o2 = QtWidgets.QDoubleSpinBox(self)
-        self.o2.setGeometry(QtCore.QRect(430, 220, 101, 41))
+        self.o2.setGeometry(QtCore.QRect(430, 150, 101, 41))
         self.o2.setMaximum(5.0)
         self.o2.setSingleStep(0.1)
         self.o2.setProperty("value", para['slym_o'][1])
         self.o2.setObjectName("o2")
+
         self.o3 = QtWidgets.QDoubleSpinBox(self)
-        self.o3.setGeometry(QtCore.QRect(550, 220, 101, 41))
+        self.o3.setGeometry(QtCore.QRect(550, 150, 101, 41))
         self.o3.setMaximum(5.0)
         self.o3.setSingleStep(0.1)
         self.o3.setProperty("value", para['slym_o'][2])
         self.o3.setObjectName("o3")
+
         self.o4 = QtWidgets.QDoubleSpinBox(self)
-        self.o4.setGeometry(QtCore.QRect(670, 220, 101, 41))
+        self.o4.setGeometry(QtCore.QRect(670, 150, 101, 41))
         self.o4.setMaximum(5.0)
         self.o4.setSingleStep(0.1)
         self.o4.setProperty("value", para['slym_o'][3])
         self.o4.setObjectName("o4")
 
         self.w1 = QtWidgets.QDoubleSpinBox(self)
-        self.w1.setGeometry(QtCore.QRect(310, 160, 101, 41))
+        self.w1.setGeometry(QtCore.QRect(310, 90, 101, 41))
+        self.w1.setSingleStep(0.1)
+        self.w1.setMinimum(-10.0)
+        self.w1.setMaximum(10.0)
         self.w1.setProperty("value", para['slym_w'][0])
         self.w1.setObjectName("w1")
+
         self.w2 = QtWidgets.QDoubleSpinBox(self)
-        self.w2.setGeometry(QtCore.QRect(430, 160, 101, 41))
+        self.w2.setGeometry(QtCore.QRect(430, 90, 101, 41))
+        self.w2.setSingleStep(0.1)
+        self.w2.setMinimum(-10.0)
+        self.w2.setMaximum(10.0)
         self.w2.setProperty("value", para['slym_w'][1])
         self.w2.setObjectName("w2")
+
         self.w3 = QtWidgets.QDoubleSpinBox(self)
-        self.w3.setGeometry(QtCore.QRect(550, 160, 101, 41))
+        self.w3.setGeometry(QtCore.QRect(550, 90, 101, 41))
+        self.w3.setSingleStep(0.1)
+        self.w3.setMinimum(-10.0)
+        self.w3.setMaximum(10.0)
         self.w3.setProperty("value", para['slym_w'][2])
         self.w3.setObjectName("w3")
+
         self.w4 = QtWidgets.QDoubleSpinBox(self)
-        self.w4.setGeometry(QtCore.QRect(670, 160, 101, 41))
+        self.w4.setGeometry(QtCore.QRect(670, 90, 101, 41))
+        self.w4.setSingleStep(0.1)
+        self.w4.setMinimum(-10.0)
+        self.w4.setMaximum(10.0)
         self.w4.setProperty("value", para['slym_w'][3])
         self.w4.setObjectName("w4")
 
-        self.alpha = QtWidgets.QDoubleSpinBox(self)
-        self.alpha.setGeometry(QtCore.QRect(310, 280, 101, 41))
-        self.alpha.setSingleStep(0.01)
-        self.alpha.setProperty("value", para['alpha'])
-        self.alpha.setObjectName("alpha")
+        self.thre1 = QtWidgets.QDoubleSpinBox(self)
+        self.thre1.setGeometry(QtCore.QRect(310, 210, 101, 41))
+        self.thre1.setSingleStep(0.01)
+        self.thre1.setMinimum(-10.0)
+        self.thre1.setMaximum(10.0)
+        self.thre1.setProperty("value", para['thre'][0])
+        self.thre1.setObjectName("thre1")
+
+        self.thre2 = QtWidgets.QDoubleSpinBox(self)
+        self.thre2.setGeometry(QtCore.QRect(430, 210, 101, 41))
+        self.thre2.setSingleStep(0.01)
+        self.thre2.setMinimum(-10.0)
+        self.thre2.setMaximum(10.0)
+        self.thre2.setProperty("value", para['thre'][1])
+        self.thre2.setObjectName("thre2")
+
         self.beta = QtWidgets.QDoubleSpinBox(self)
-        self.beta.setGeometry(QtCore.QRect(310, 340, 101, 41))
+        self.beta.setGeometry(QtCore.QRect(310, 270, 101, 41))
         self.beta.setSingleStep(0.01)
+        self.beta.setMinimum(0)
+        self.beta.setMaximum(5)
         self.beta.setProperty("value", para['beta'])
         self.beta.setObjectName("beta")
 
-        self.label_7 = QtWidgets.QLabel(self)
-        self.label_7.setGeometry(QtCore.QRect(30, 420, 531, 21))
-        self.label_7.setObjectName("label_7")
+        # 档位优先级
+        self.alpha = QtWidgets.QDoubleSpinBox(self)
+        self.alpha.setGeometry(QtCore.QRect(310, 330, 101, 41))
+        self.alpha.setSingleStep(0.01)
+        self.alpha.setMinimum(-5)
+        self.alpha.setMaximum(5)
+        self.alpha.setProperty("value", para['alpha'])
+        self.alpha.setObjectName("alpha")
 
         self.recover = QtWidgets.QPushButton(self)
         self.recover.setGeometry(QtCore.QRect(670, 470, 101, 41))
@@ -475,21 +574,21 @@ class Ui_Para(QtWidgets.QWidget):
     def retranslateUi(self):
         _translate = QtCore.QCoreApplication.translate
         self.setWindowTitle(_translate("Para", "参数调整"))
-        self.label.setText(_translate("Para", "销量变化率目标权重"))
-        self.label_2.setText(_translate("Para", "允许销售金额浮动范围"))
+
+        self.label_2.setText(_translate("Para", "允许销售额浮动范围"))
         self.label_3.setText(_translate("Para", "三率一面权重"))
         self.label_4.setText(_translate("Para", "三率一面理想目标"))
-        self.label_5.setText(_translate("Para", "销售-投放 膨胀因子"))
+        self.label_5.setText(_translate("Para", "饱和-不饱和阈值"))
         self.label_6.setText(_translate("Para", "市场反馈评分最小调节单位"))
         self.label_7.setText(_translate("Para", "【注】三率一面按“订足面、订足率、订单满足率、订购率”排序"))
+        self.label_8.setText(_translate("Para", "档位优先级程度"))
         self.recover.setText(_translate("Para", "复位"))
         self.ensure.setText(_translate("Para", "确认修改"))
         self.cancel.setText(_translate("Para", "取消"))
 
     def Recover(self):
         '''按钮：恢复默认'''
-        self.c.setProperty("value", 10000)
-        self.delta_price.setProperty("value", 0.1)
+        self.delta_sold.setProperty("value", 0.01)
         self.w1.setProperty("value", 3)
         self.w2.setProperty("value", 3)
         self.w3.setProperty("value", 1)
@@ -498,8 +597,10 @@ class Ui_Para(QtWidgets.QWidget):
         self.o2.setProperty("value", 0.5)
         self.o3.setProperty("value", 0.8)
         self.o4.setProperty("value", 0.5)
-        self.alpha.setProperty("value", 1.25)
+        self.thre1.setProperty("value", -0.8)
+        self.thre2.setProperty("value", 0.8)
         self.beta.setProperty("value", 0.3)
+        self.alpha.setProperty("value", 0.12)
      
     def Ensure(self):
         '''
@@ -508,23 +609,21 @@ class Ui_Para(QtWidgets.QWidget):
         并将全局变量para输出到json中
         '''
         global para # 本函数内使用的是全局变量
-        para['c'] = self.c.value()
-        para['delta_price'] = self.delta_price.value()
+
+        para['delta_sold'] = self.delta_sold.value()
         para['slym_w'] = [self.w1.value(), self.w2.value(), self.w3.value(), self.w4.value()]
         para['slym_o'] = [self.o1.value(), self.o2.value(), self.o3.value(), self.o4.value()]
-        para['alpha'] = self.alpha.value()
+        para['thre'] = [self.thre1.value(), self.thre2.value()]
         para['beta'] = self.beta.value()
+        para['alpha'] = self.alpha.value()
 
         with open('parameter.json', 'w') as f:
             f.write(json.dumps(para))
-        # print(self.para)
         QtWidgets.QMessageBox.information(self, '提示', '参数修改成功！') 
-
 
 
 class Ui_Form(QtWidgets.QWidget):
     '''二级窗口类'''
-
     def setupUi(self, Form):
         Form.setObjectName("Form")
         Form.resize(1439, 744)
@@ -534,31 +633,43 @@ class Ui_Form(QtWidgets.QWidget):
             root = QtCore.QFileInfo(__file__).absolutePath() # __file__是文件名字符串
         Form.setWindowIcon(QtGui.QIcon(root+'/fav.ico'))
 
-        # 1.上传三率一面数据
-        self.upload_slym = QtWidgets.QPushButton(Form)
-        self.upload_slym.setGeometry(QtCore.QRect(40, 660, 181, 51))
-        self.upload_slym.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.upload_slym.setObjectName("upload_slym")
-        self.upload_slym.clicked.connect(self.Load_slym) 
+        # 1.上传上期投放策略
+        self.button_pre_stra = QtWidgets.QPushButton(Form)
+        self.button_pre_stra.setGeometry(QtCore.QRect(40, 660, 181, 51))
+        self.button_pre_stra.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.button_pre_stra.setObjectName("button_pre_stra")
+        self.button_pre_stra.clicked.connect(self.Load_pre_stra) 
+        self.button_pre_stra.setToolTip('上期投放策略字段：\n"商品名称","30档","29档"...,"1档"')
 
         # 2.生成投放策略
-        self.calc_strategy = QtWidgets.QPushButton(Form)
-        self.calc_strategy.setGeometry(QtCore.QRect(250, 660, 181, 51))
-        self.calc_strategy.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-        self.calc_strategy.setObjectName("calc_strategy")
-        self.calc_strategy.clicked.connect(self.Calc_strategy)
+        self.button_calc_strategy = QtWidgets.QPushButton(Form)
+        self.button_calc_strategy.setGeometry(QtCore.QRect(250, 660, 181, 51))
+        self.button_calc_strategy.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        self.button_calc_strategy.setObjectName("button_calc_strategy")
+        self.button_calc_strategy.clicked.connect(self.Calc_strategy)
 
-        # 显示投放策略
-        self.strategy_tableView = QtWidgets.QTableView(Form)
-        self.strategy_tableView.setGeometry(QtCore.QRect(40, 30, 1351, 591))
-        self.strategy_tableView.setObjectName("strategy_tableView")
-
-        # 导出CSV文件
+        # 3.导出CSV文件
         self.output_csv = QtWidgets.QPushButton(Form)
         self.output_csv.setGeometry(QtCore.QRect(1210, 660, 181, 51))
         self.output_csv.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
         self.output_csv.setObjectName("output_csv")
         self.output_csv.clicked.connect(self.Output_csv)
+
+        # "计算进度"文字
+        self.label = QtWidgets.QLabel(Form)
+        self.label.setGeometry(QtCore.QRect(510, 660, 71, 51))
+        self.label.setObjectName("label")
+
+        # 进度条
+        self.progressBar = QtWidgets.QProgressBar(Form)
+        self.progressBar.setGeometry(QtCore.QRect(620, 670, 481, 31))
+        self.progressBar.setProperty("value", 0)
+        self.progressBar.setObjectName("progressBar")
+
+        # 显示投放策略
+        self.strategy_tableView = QtWidgets.QTableView(Form)
+        self.strategy_tableView.setGeometry(QtCore.QRect(40, 30, 1351, 591))
+        self.strategy_tableView.setObjectName("strategy_tableView")
 
         self.retranslateUi(Form)
         QtCore.QMetaObject.connectSlotsByName(Form)
@@ -566,14 +677,21 @@ class Ui_Form(QtWidgets.QWidget):
     def retranslateUi(self, Form):
         _translate = QtCore.QCoreApplication.translate
         Form.setWindowTitle(_translate("Form", " 自动化常规投放"))
-        self.output_csv.setText(_translate("Form", "导出表格文件"))
-        self.upload_slym.setText(_translate("Form", "1.上传三率一面数据"))
-        self.calc_strategy.setText(_translate("Form", "2.生成投放策略"))
 
-    def Load_slym(self):
+        self.button_pre_stra.setText(_translate("Form", "1.上传上期投放策略"))
+        self.button_calc_strategy.setText(_translate("Form", "2.生成本期投放策略"))
+        self.output_csv.setText(_translate("Form", "3.导出表格文件"))
+        self.label.setText(_translate("Form", "计算进度"))
+
+    def Table_show(self, data):
+        '''输入pd.DataFrame显示在strategy_tableView'''
+        model = PandasModel(data)
+        self.strategy_tableView.setModel(model)
+
+    def Load_pre_stra(self):
         '''
         二级窗口中上传三率一面数据
-        数据框赋值到self.slym_data
+        数据框赋值到self.data_pre_stra
         '''
         options = QtWidgets.QFileDialog.Options()
         options |= QtWidgets.QFileDialog.DontUseNativeDialog
@@ -581,33 +699,10 @@ class Ui_Form(QtWidgets.QWidget):
                                             Microsoft Excel 工作表 (*.xlsx);;Microsoft Excel 97-2003 工作表 (*.xls)''', options=options)[0]
         if fileName:
             try: # pandas读入数据容易出错,防止闪退.待实现：弹窗报错、读入xlsx
-                self.slym_data = pd.read_excel(fileName, dtype={'品规ID':str})
-                if not self.check_sylm(self.slym_data): return # 检测三率一面数据是否正确
-                QtWidgets.QMessageBox.information(self, '提示', '数据上传成功！')
+                self.data_pre_stra = pd.read_excel(fileName)
+                self.Table_show(self.data_pre_stra)
             except: 
                 QtWidgets.QMessageBox.critical(self, '错误', '数据上传失败')
-
-    def check_sylm(self, dt):
-        '''
-        校验三率一面数据
-        1.字段名是否正确
-        2.'品规名','档位','品规ID'是否有缺失
-        若有错误，则过程中会相应弹出
-        并最终返回 无误True/有误False
-        '''
-        # 字段名是否正确
-        s = {'上期策略', '品规ID', '品规名', '总户数', '投放量', '档位', '订单满足率', '订购率', '订购量', '订足率', '订足面', '需求量'}
-        jud = s.issubset(set(dt.columns))
-        if not jud:
-            QtWidgets.QMessageBox.critical(self, '错误', '字段名有误，请检查数据后重新上传')
-            return False
-        
-        # 若品规名、品规ID、档位有缺失
-        if dt.loc[:,['品规名','档位','品规ID']].isnull().sum().sum() > 0:
-            QtWidgets.QMessageBox.critical(self, '错误', '品规名，品规ID或档位有缺失，请检查数据后重新上传')
-            return False
-        
-        return True
     
     def Calc_strategy(self):
         '''
@@ -619,22 +714,18 @@ class Ui_Form(QtWidgets.QWidget):
         solu = Solution(para)
 
         try:
-            self.strategy = solu.stage_two(self.slym_data, self.sold_obj_data)
-            self.Table_show(self.strategy[0])
+            self.strategy = solu.stage_two(self, self.data_pre_stra, self.data_sale, self.data_item, self.data_cust)
+            self.Table_show(self.strategy[0]) # self.strategy[0]: 本期策略表 形状和上期策略表一致
 
-            pred_sale = self.strategy[1]
-            pred_price = self.strategy[2]
-            pred_sale_change = (pred_sale-self.sold_obj_num)/self.sold_obj_num
-            pred_price_change = (pred_price-self.price_obj_num)/self.price_obj_num
+            pred_sale = self.strategy[1] # self.strategy[1]: 预期总销量（条）
+            pred_price = self.strategy[2] # self.strategy[2]：预期结构（元/箱）
+            pred_sale_change = (pred_sale-self.value_sold_obj)/self.value_sold_obj
+            pred_price_change = (pred_price-self.value_price_obj)/self.value_price_obj
 
             QtWidgets.QMessageBox.information(self, '提示', '此投放策略下:\n预期销量为 %.2f 箱，与目标偏差为 %.2f\n预期结构为 %.2f 元/箱，与目标偏差为 %.2f'%(pred_sale,pred_sale_change,pred_price,pred_price_change))
         except:
             QtWidgets.QMessageBox.critical(self, '错误', '策略计算失败')
 
-    def Table_show(self, data):
-        '''输入pd.DataFrame显示在strategy_tableView'''
-        model = PandasModel(data)
-        self.strategy_tableView.setModel(model)
 
     def Output_csv(self):
         '''导出self.strategy'''
@@ -644,7 +735,7 @@ class Ui_Form(QtWidgets.QWidget):
                                                             Microsoft Excel 97-2003 工作表 (*.xls);;所有文件 (*)""", options=options)
         if fileName:
             try: 
-                self.strategy.to_excel(fileName)
+                self.strategy[0].to_excel(fileName)
                 QtWidgets.QMessageBox.information(self, '提示', '投放策略导出成功！')
             except: 
                 QtWidgets.QMessageBox.critical(self, '错误', '投放策略导出失败')
@@ -711,23 +802,39 @@ class PandasModel(QtCore.QAbstractTableModel):
         self.layoutChanged.emit()
 
 
+
+
+
+
+
 class Solution(object):
     '''模型求解类'''
     def __init__(self, para):
         '''超参数传入'''
-        self.c = para['c'] # 规划目标中的销量变化率项的权重系数 10000
-        self.delta_price = para['delta_price'] # 允许销售金额的浮动范围 0.1
+        # 一阶段模型参数
+        self.delta_sold = para['delta_sold'] # 允许销售额的浮动范围 0.01
+
+        # 二阶段模型参数
         self.slym_weight = para['slym_w'] # 三率一面的权重向量 [3,3,1,0.1]
         self.slym_object = para['slym_o'] # 三率一面的调整目标 [0.5,0.5,0.8,0.5]
-        self.alpha = para['alpha'] # 销量-投放膨胀因子，增加1单位销量需要增加1*alpha投放量 1.25
+        self.thre = para['thre'] # 不饱和、饱和的阈值 [-0.8, 0.8]
         self.beta = para['beta'] # 市场反馈评分最小调节单位，每单位策略对评分的影响大小 0.3
+        self.alpha = para['alpha'] # 档位优先程度 0.12 score默认扣除0.12 * (30-dw) 档位越高score越大,越容易不饱和
 
     def stage_one(self, arg_source, sold_obj, price_obj):
-        '''一阶段求解：return np.array in int dtype'''
+        '''
+        一阶段求解：本期销量目标
+        输入
+            arg_source 包括'批发价格'(单条价)，'上期销量'，'本期产能'
+            sold_obj
+            price_obj
+        输出
+            np.array int
+        '''
 
-        price = arg_source['单箱价格'].values
-        sold = arg_source['上期销售量'].values 
-        cap = arg_source['产能'].values
+        price = arg_source['批发价格'].values * 250
+        sold = arg_source['上期销量'].values 
+        cap = arg_source['本期产能'].values
         I = price.size
 
         var = [i for i in map(lambda x: 'x(' + str(x) + ')', list(range(arg_source.shape[0])))] # ['x(0)', 'x(1)', ...]
@@ -760,8 +867,8 @@ class Solution(object):
             p4 += ' + %s x(%s)'%(1/250, i)
 
         lp += '\nSubject To\n'
-        lp += ' c1: %s >= %s \n'%(p4, 0.9*sold_obj)
-        lp += ' c2: %s <= %s \n'%(p4, 1.1*sold_obj)
+        lp += ' c1: %s >= %s \n'%(p4, (1-self.delta_sold)*sold_obj)
+        lp += ' c2: %s <= %s \n'%(p4, (1+self.delta_sold)*sold_obj)
         for i in range(len(cap)):
             lp += ' c%s: x(%s) - Rgc%s = 0\n'%(3+i, i, i)
         lp += 'Bounds\n'
@@ -784,183 +891,166 @@ class Solution(object):
             return np.array(x, dtype='int')[0:int(len(x)/2)]
         except:
             QtWidgets.QMessageBox.critical(QtWidgets.QWidget(), '错误', '模型无解：请调整销量或结构目标') # 无解时弹窗报错
-            return np.array([0]*cap.size)
+            return np.array([0]*I)
 
-    def stage_two(self, slym_source, sold_obj):
+    def stage_two(self, window, pre_stra, data_sale, data_item, data_cust):
         '''
         输入：
-            三率一面数据 slym_source: pd.DataFrame 
-            销量目标数据 sold_obj: pd.DataFrame(item, itemid, price, sold_previous, sold_target)
+            window: 调用stage_two的窗口类，其中包括进度条
+            pre_stra: 上期策略表 [商品名称 30档 29档 ...]
+            data_sale: 订购数据 所有品规所有档位 [CUST_ID ITEM_ID QTY_NEED QTY_SOLD 品规名 本期产能 批发价格 档位]
+            data_item: 品规信息 [品规名 品规ID 本期产能 批发价格 上期销量 本期销量目标]
+            data_cust: 零售户信息 [客户ID 档位]
         输出：
-            out_print:  pd.DataFrame in shape of (品规数, 档位数+2)
+            out_print:  本期策略表 形状和上期策略表一致
             pred_sale_sum: 预期总销量（箱）
-            pred_price：预期结构
+            pred_price：预期结构（元/箱）
         '''
-        # 处理slym_source的缺失值
-        slym_source = self.preprocess(slym_source)
+        out_print = pd.DataFrame(columns=pre_stra.columns)
+        pred_sale_sum = 0
+        pred_price = 0
 
-        # 创建结果空数据框
-        col = ['品规ID','品规名','三十档', '二十九档', '二十八档', '二十七档', '二十六档','二十五档','二十四档','二十三档',
-                '二十二档','二十一档','二十档','十九档','十八档','十七档','十六档','十五档','十四档', '十三档',
-                '十二档','十一档', '十档','九档','八档','七档','六档', '五档','四档','三档','二档','一档']
-        out_print = pd.DataFrame(columns=col)
+        for ind in pre_stra.index:
+            item_name = pre_stra.loc[ind, '商品名称']
+            item_sale = data_sale[data_sale['品规名']==item_name]
+            if item_sale.shape[0]==0: continue # 如果上期策略中的某品规在订购记录中没有数据
+            max_need = []
+            score = []
+            strat = []
 
-        # 本期预计销量
-        pred_sale = np.zeros(sold_obj.shape[0])
+            for i in range(30):    
+                dw = 30-i # dw由30~1
+                cube = item_sale[item_sale['档位']==dw] # 某品规某档位上的订购数据,可能有空数据框即该档位对该品规没有需求
+                num  = data_cust[data_cust['档位']==dw].shape[0]
+                put  = pre_stra[pre_stra['商品名称']==item_name].values[0][i+1]
+                # 该品规在30-1档上的最大需求list max_need
+                if cube.shape[0]: max_need.append(cube['QTY_NEED'].max())
+                else: max_need.append(0)
+                score.append(self.cal_score(cube, dw, num, put))
+                strat.append(put)
 
-        # 计算各品规投放策略
-        for i in range(sold_obj.shape[0]):
-            # 以step1的item&itemid为基准遍历
-            item_id = sold_obj['itemid'].values[i]
-            item = sold_obj['item'].values[i]
-            change_aim = sold_obj['sold_target'].values[i] - sold_obj['sold_previous'].values[i]
-            guide = self.get_guide(slym_source, item, item_id)
-            single = self.single_strategy(guide, change_aim)
-            out_print.loc[i,:] = single[1]
-            pred_sale[i] = round( (single[0]*guide['dzl']*guide['number']).sum() )
+            sold_obj = data_item[data_item['品规名']==item_name]['本期销量目标'].values[0]
+            sold_pre = data_item[data_item['品规名']==item_name]['上期销量'].values[0]
+            sold_price = data_item[data_item['品规名']==item_name]['批发价格'].values[0]
+            item_stra = self.single_strategy(item_name, item_sale, np.array(max_need), np.array(score), np.array(strat), sold_obj, sold_pre) 
+            # item_stra: 该品规下期策略，预测的品规销量
+
+            out_print.loc[ind,:] = item_stra[0]
+            pred_sale_sum += item_stra[1] # 条
+            pred_price += (item_stra[1]*sold_price) # 条*（元/条）
+
+            print(item_stra[0], '上期销量',sold_pre, '销量目标',sold_obj, '完成目标',item_stra[1])
+
+            prog = int(100*(ind+1)/pre_stra.shape[0])
+            window.progressBar.setValue( prog )
+            
+        pred_sale_sum /= 250 # 箱
+        pred_price /= pred_sale_sum # 元/箱
         
-        pred_sale_sum = pred_sale.sum()/250
-        pred_price = (pred_sale * sold_obj['price'].values).sum()/pred_sale.sum()
-
         return out_print, pred_sale_sum, pred_price
 
-    def preprocess(self, dt):
-        '''
-        处理三率一面数据框中的缺失值
-        将各品规的档位按30到1排列
-        返回处理后的数据框
-        '''
-
-        # 字符串“xx档”转为int
-        name_list = ['三十档', '二十九档', '二十八档', '二十七档', '二十六档','二十五档','二十四档','二十三档','二十二档','二十一档',
-          '二十档','十九档','十八档','十七档','十六档','十五档','十四档', '十三档','十二档','十一档', '十档','九档',
-          '八档','七档','六档', '五档','四档','三档','二档','一档']
-
-        t = 30
-        for i in name_list: 
-            dt['档位'] = dt['档位'].replace(i,t)
-            t -= 1
-        
-        # 处理inf和Na
-        null_rate = dt.isnull().sum().sum()/(dt.shape[0]*dt.shape[1]) # 三率一面数据中数据缺失率
-        QtWidgets.QMessageBox.warning(QtWidgets.QWidget(), '警告','三率一面数据中缺失率为%.3f，已智能补全'%null_rate)
-        dt = dt.replace(np.inf, 1) 
-        dt['上期策略'].fillna(0, inplace=True) # '上期策略'的缺失用0填补,因为输出策略是据此调整的,用均值影响太大
-        dt['上期策略'] = dt['上期策略'].astype(int) # '上期策略'需要转成int
-        for column in list(dt.columns[dt.isnull().sum() > 0]):
-            mean_val = dt[column].mean()
-            dt[column].fillna(mean_val, inplace=True)
-
-        # 将各品规的档位按30到1排列
-        dt.sort_values(by=['品规ID','档位'],inplace=True,ascending=[True,False])  
-        return dt     
-
-    def get_guide(self, slym, item, itemid):
-        '''
-        @description: 由品规名、品规ID在预处理过的三率一面数据中得到该品规的三率一面、上期策略等指导数据（step2品规名的校验）
-        @parameter: slym DataFrame; itemid np.int64; itme str
-        @return: dict{三率一面,上期策略,品规名,上期订购总量,各组总户数} 
-        '''
-
-        # 由step1的'品规ID'筛选出该品规的三率一面数据框
-        item_cube = slym[slym['品规ID'] == itemid]
-
-        # 若在step2中未匹配到该品规ID则返回None
-        if item_cube.shape[0] == 0:
-            QtWidgets.QMessageBox.critical(QtWidgets.QWidget(), '错误','三率一面数据中缺少品规【ID%s：%s】'%(itemid,item))
-
-        # 该品规ID匹配到的不是30行，则弹窗报错
-        if item_cube.shape[0] != 30:
-            QtWidgets.QMessageBox.critical(QtWidgets.QWidget(), '错误','三率一面数据中【ID%s：%s】不足30档，请检查数据后重新上传'%(itemid,item))
-
-        # step2中的 品规ID-品规名 校验，若有不符则弹窗警告
-        item2 = item_cube['品规名'].values[0]
-        if (item != item2) or (item_cube['品规名'].value_counts().size != 1):
-            QtWidgets.QMessageBox.warning(QtWidgets.QWidget(), '警告','三率一面数据中品规名和ID不匹配：ID%s-%s'%(itemid, item2))
-
-
-        strategy = item_cube['上期策略'].values 
-        dzm = item_cube['订足面'].values
-        dzl = item_cube['订足率'].values
-        ddmz = item_cube['订单满足率'].values
-        dgl = item_cube['订购率'].values
-        dg = item_cube['订购量'].values        
-        number = item_cube['总户数'].values               
-        number_c = item_cube['订购户数'].values        
-        number_z = item_cube['订足户数'].values       
-
-        return {'strategy':strategy, 
-                'dzm':dzm, 'dzl':dzl,'ddmz':ddmz, 'dgl':dgl, 'dg': dg,
-                'item':item, 'itemid':itemid, 
-                'number':number, 'number_c':number_c, 'number_z':number_z}
-    
-    def single_strategy(self, guide, obj): 
+    def single_strategy(self, item_name, item_sale, max_need, score, strat, sold_obj, sold_pre): 
         '''
         单品规投放策略
         输入：
-            guide: 单个品规的三率一面, get_guide()的输出
-            obj: 该品规的销量改变目标(条)
+            item_name: 品规名称
+            item_sale: 单个品规在30~1档上的订购数据明细
+            max_need: 单个品规在30~1档上的最大需求向量 np.array
+            score: 单个品规在30~1档上的不饱和度向量 np.array
+            strat: 单个品规在30~1档上的上期策略向量 np.array
+            sold_obj: 该品规在30~1档上的总销量目标(条)
+            sold_pre: 该品规在30~1档上的上期总销量(条)
         输出：
-            strategy: np.array [30', 29', ...] int 
             output: np.array [name, ID, 30'(+3), 29'(-1), ...] str
+            sold_sim: 旧需求、新策略下完成的该品规总销量
         '''
-        strategy = copy.copy(guide['strategy']) # 浅拷贝,否则相当于传址调用,会修改guide_data['strategy']
-        number = guide['number_c']             # 实际订购户数:改变一单位投放，消耗的待调整量
+        strategy = copy.copy(strat) # 浅拷贝,可变对象相当于传址调用,会改变原值
+        sold_sim = copy.copy(sold_pre)
 
-        # 计算某品规在30个档位上的score：30~1档顺序
-        score = np.array([self.slym_weight[0]*(self.slym_object[0]-guide['dzm'][i])
-                    +self.slym_weight[1]*(guide['dzl'][i]-self.slym_object[1])
-                    +self.slym_weight[2]*(self.slym_object[2]-guide['ddmz'][i])
-                    +self.slym_weight[3]*(guide['dgl'][i]-self.slym_object[3]) - 0.12*i # 30~1档优先级递减
-                    for i in range(30)])
-            
-        # 30~1档优先级递减
-        # score *= np.arange(1,0.4,-0.02)
 
-        # score中心化
-        score = score - score.mean()
+        # 需增加投放
+        if sold_obj - sold_pre > 3: 
 
-        if obj > 0: # 需增加投放
-            delta = self.alpha * obj # self.alpha=1.25 销量-投放膨胀因子，增加1单位销量需要增加1*alpha投放量
-            for i in range(0,30):
-                while score[i] < -0.8:
-                    if strategy[i] <= 0:
-                        break
-                    strategy[i] -= 1
-                    delta += number[i]
-                    score[i] += self.beta # self.beta=0.3 市场反馈评分最小调节单位，每单位策略对评分的影响大小
-            while delta > 0:
+            # 扣掉过于饱和的档位
+            # for i in range(0,30):
+            #     while score[i] < self.thre[0]:
+            #         if strategy[i] <= 0: break
+            #         strategy[i] -= 1
+            #         score[i] += self.beta
+            # sold_sim = self.number(item_sale, strategy)
+
+            # 在不饱和档位上增加投放
+            while (sold_obj > sold_sim) and (strategy < max_need).any(): # 当所有策略都>=最大需求时，跳出
                 t = np.where(score==score.max())[0][0]
-                strategy[t] += 1
-                score[t] -= self.beta
-                delta -= number[t]
+                if strategy[t] < max_need[t]: # 策略比最大需求小的档位才增加策略
+                    strategy[t] += 1
+                    score[t] -= self.beta
+                    sold_sim = self.number(item_sale, strategy)
+                else:
+                    score[t] -= 10000
 
-        elif obj < 0: # 需减少投放,obj为0则不调整策略
-            delta = self.alpha * obj 
+
+        # 需减少投放,相等则不调整策略
+        elif sold_obj - sold_pre < -3: 
+
+            # 在过于不饱和的档位上增加投放
             for i in range(0,30):
-                while score[i] > 0.8:
+                while score[i] > self.thre[1]:
                     strategy[i] += 1
-                    delta -= number[i]
                     score[i] -= self.beta
-            n = 1
-            while delta < 0 and n <= 30:
-                n += 1
+                    sold_sim = self.number(item_sale, strategy)
+
+            # 在饱和的档位上减少投放
+            while sold_obj < sold_sim: 
                 t = np.where(score==score.min())[0][0]
                 if strategy[t] > 0:
                     strategy[t] -= 1
                     score[t] += self.beta
-                    delta += number[t]
+                    sold_sim = self.number(item_sale, strategy)
                 else:
                     score[t] += 10000
 
-        change = strategy - guide['strategy']
-        output = np.array(strategy, dtype=str)
+        print('上期',sold_pre, '目标',sold_obj, '完成',sold_sim)
+
+        change = strategy - strat
+        output = [str(x) for x in strategy]
         for i in range(30):
-            if change[i]>0: output[i] += ' (+%s)'%change[i]
-            elif change[i]<0: output[i] += ' (%s)'%change[i]
-        output = np.append(np.array([guide['item'],guide['itemid']]), output) # 打印的内容 [name, ID, 30', 29', ...]
-        
-        return strategy,output
+            if change[i] > 0:  output[i] += ' (+%s)'%change[i]
+            elif change[i] < 0: output[i] += ' (%s)'%change[i]
+        output = np.append(item_name, output) # 打印的内容 [name, ID, 30', 29', ...]
+
+        return output,sold_sim
+
+    def number(self, item_sale, stra):
+        '''
+        在某品规的订购明细中
+        给定30-1档位策略向量 stra: list/np.array
+        求在新策略下的总销量
+        '''
+        sold = 0
+        for i in range(30):
+            need = item_sale[item_sale['档位']==30-i]['QTY_NEED'].values
+            strat = np.array([stra[i]]*need.size)
+            sold += (need[need <= strat].sum() + strat[need > strat].sum())
+        return sold
+    
+    def cal_score(self, cube, dw, num, put):
+        '''
+        根据某品规、某档位上的订购数据，计算不饱和度
+        cube: CUST_ID,ITEM_ID,QTY_NEED,QTY_SOLD,品规名,本期产能,批发价格,档位. 可能会存在空数据框,即该档位在该品规上没有需求
+        num: 该档位的总户数
+        put: 该品规、该档位的上期投放策略. 可能会存在0,即该档位在该品规上没有投放
+        dw: 档位
+        '''
+        if (cube.shape[0] == 0) or (put == 0): return -self.alpha*(30-dw)
+        dzm = cube[cube['QTY_NEED']==cube['QTY_SOLD']].shape[0]/cube.shape[0]
+        dzl = cube['QTY_SOLD'].sum()/(put*num)
+        ddmz = cube['QTY_SOLD'].sum()/cube['QTY_NEED'].sum()
+        dgl = cube.shape[0]/num 
+        score = self.slym_weight[0]*(self.slym_object[0]-dzm)+self.slym_weight[1]*(dzl-self.slym_object[1])+self.slym_weight[2]*(self.slym_object[2]-ddmz)+self.slym_weight[3]*(dgl-self.slym_object[3])-self.alpha*(30-dw)
+        return score
+
+
 
 class Ui_About(object):
     def setupUi(self, Form):
